@@ -1,0 +1,79 @@
+name: Backend CI/CD to Kubernetes
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend/**' # Trigger only if changes are in the backend directory
+
+jobs:
+  build-test-scan-push-deploy:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: my-backend
+      REGISTRY_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+      REGISTRY_TOKEN: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ env.REGISTRY_USERNAME }}
+          password: ${{ env.REGISTRY_TOKEN }}
+
+      - name: Build backend Docker image
+        id: docker_build
+        uses: docker/build-push-action@v2
+        with:
+          context: ./backend # Path to your backend's Dockerfile context
+          file: ./backend/Dockerfile
+          push: false # Don't push yet, we'll scan first
+          tags: ${{ env.REGISTRY_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Run backend tests (conceptual)
+        run: |
+          # Example: Install dependencies and run tests inside a temporary container
+          echo "Running backend tests..."
+          # docker run --rm ${{ env.REGISTRY_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }} python -m pytest ./backend/tests/
+
+      - name: Scan backend image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.REGISTRY_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}'
+          format: 'table'
+          exit-code: '1' # Fail the build if CRITICAL/HIGH vulnerabilities are found
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+
+      - name: Push backend Docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          # Also tag with 'latest' if you wish, but SHA is for immutable deployments
+          # tags: ${{ env.REGISTRY_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }},${{ env.REGISTRY_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+
+      - name: Deploy to Kubernetes
+        uses: azure/k8s-set-context@v1 # Use a suitable action for setting K8s context
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CONFIG }} # Your Kubernetes kubeconfig as a secret
+
+      - name: Update Kubernetes Deployment
+        run: |
+          # Replace the image tag in your Kubernetes manifest and apply it
+          # This assumes your deployment.yaml has an image field to update
+          # A more robust solution might use kustomize or helm
+          echo "Updating Kubernetes deployment for backend..."
+          # kubectl set image deployment/backend-deployment backend=${{ env.REGISTRY_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }} -n your-namespace # Replace 'your-namespace'
+          # kubectl rollout status deployment/backend-deployment -n your-namespace
+        env:
+          KUBECONFIG_FILE: ${{ runner.temp }}/kubeconfig

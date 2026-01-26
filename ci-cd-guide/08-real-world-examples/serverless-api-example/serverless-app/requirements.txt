@@ -1,0 +1,4 @@
+# No specific requirements for this simple example,
+# but in a real project, you would list your dependencies here.
+# For instance:
+# requests==2.26.0

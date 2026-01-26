@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-processing
+  labels:
+    app: order-processing
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: order-processing
+  template:
+    metadata:
+      labels:
+        app: order-processing
+    spec:
+      containers:
+        - name: order-processing
+          image: your-repo/order-processing-service:latest # Replace with your image
+          ports:
+            - containerPort: 8081
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-processing-service
+  labels:
+    app: order-processing
+spec:
+  ports:
+    - port: 8081
+      targetPort: 8081
+  selector:
+    app: order-processing

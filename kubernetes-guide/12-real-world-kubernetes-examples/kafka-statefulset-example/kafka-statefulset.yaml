@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  labels:
+    app: kafka
+spec:
+  serviceName: kafka-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      containers:
+        - name: kafka
+          image: confluentinc/cp-kafka:6.1.0
+          ports:
+            - containerPort: 9092
+              name: client
+          env:
+            - name: KAFKA_BROKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['broker-id'] # Needs an init container to set this dynamically
+            - name: KAFKA_ZOOKEEPER_CONNECT
+              value: "zookeeper-client:2181"
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: PLAINTEXT://kafka-{{ statefulset.kubernetes.io/pod-name }}.kafka-headless:9092 # Needs an init container to set this dynamically
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: PLAINTEXT:PLAINTEXT
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: PLAINTEXT
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/kafka/data
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+      initContainers: # Used to dynamically set KAFKA_BROKER_ID and KAFKA_ADVERTISED_LISTENERS
+        - name: init-kafka
+          image: busybox:1.32
+          command: ['sh', '-c', '']
+          args:
+            - |
+              POD_NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+              POD_NAME=$(hostname)
+              BROKER_ID=$(echo $POD_NAME | sed 's/kafka-//')
+              echo "Setting KAFKA_BROKER_ID to $BROKER_ID"
+              kubectl annotate pod $POD_NAME "broker-id=$BROKER_ID" --overwrite -n $POD_NAMESPACE
+              
+              # This part is more complex and often handled by an Operator or Helm
+              # KAFKA_ADVERTISED_LISTENERS is usually set to the service name
+              # or a more robust solution is needed for dynamic IP discovery.
+              # For simplicity in this basic example, we'll rely on the Pod's DNS record
+              # which is stable in a StatefulSet.
+              # This init container primarily focuses on the BROKER_ID.
+              # A real-world setup would use a Helm chart or Operator.
+          volumeMounts:
+            - name: kubernetes-token
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+      volumes:
+        - name: kubernetes-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+                  audience: api
+
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi # Adjust storage size as needed
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-headless
+  labels:
+    app: kafka
+spec:
+  ports:
+    - port: 9092
+      name: client
+  selector:
+    app: kafka
+  clusterIP: None # Headless service for StatefulSet
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-client
+  labels:
+    app: kafka
+spec:
+  ports:
+    - port: 9092
+      name: client
+  selector:
+    app: kafka
+  type: ClusterIP # Or LoadBalancer for external access

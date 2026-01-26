@@ -1,0 +1,19 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: daily-backup
+spec:
+  schedule: "0 0 * * *" # Run daily at midnight UTC
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: backup
+              image: alpine/git # A simple image with git for example
+              command: ["sh", "-c", "echo 'Performing daily backup...'; sleep 30; echo 'Backup complete!'"]
+              # In a real scenario, this would involve:
+              # - Mounting a volume with credentials for a backup target (e.g., S3)
+              # - Executing a backup script for your database/data
+              # - Uploading backup to remote storage
+          restartPolicy: OnFailure

@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  app:
+    build: ./backend
+    ports:
+      - "5000:5000"
+    networks:
+      - monitor-net
+
+  prometheus:
+    image: prom/prometheus:v2.26.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - monitor-net
+
+  grafana:
+    image: grafana/grafana:7.5.7
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - monitor-net
+
+  loki:
+    image: grafana/loki:2.2.1
+    ports:
+      - "3100:3100"
+    networks:
+      - monitor-net
+
+  promtail:
+    image: grafana/promtail:2.2.1
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./promtail-config.yml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - monitor-net
+
+networks:
+  monitor-net:
+
+volumes:
+  grafana-data:
